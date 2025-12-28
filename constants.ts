@@ -13,6 +13,12 @@ Diretrizes:
 - Ao analisar fotos, foque em: ambiente, linguagem corporal sugerida e "abridores" de conversa adequados ao contexto.
 `;
 
+// LISTA DE ADMINISTRADORES AUTORIZADOS
+export const ADMIN_EMAILS = [
+  'fernando@gnog.com.mx',
+  'admin@seductionxpert.com'
+];
+
 export const YOUTUBE_CHANNEL_URL = "https://youtube.com/@seductionxpert";
 export const SUPABASE_URL = "https://snjkiotgyagmyhratyqo.supabase.co";
 
@@ -77,7 +83,7 @@ export const TRANSLATIONS = {
     allCourses: "100% Courses Access",
     heroTitle: "Conquest Starts Within.",
     heroSubtitle: "Transform your shyness into social power.",
-    dailyTips: "Consultant Tips",
+    dailyTips: "Daily Tips",
     startTraining: "Start Training",
     locked: "Locked",
     modules: "Modules",
@@ -105,11 +111,11 @@ export const TRANSLATIONS = {
     allCourses: "Cursos 100% Liberados",
     heroTitle: "La Conquista Empieza Desde Dentro.",
     heroSubtitle: "Transforma tu timidez en poder social.",
-    dailyTips: "Consejos del Consultor",
+    dailyTips: "Consejos Diarios",
     startTraining: "Empezar Entrenamiento",
     locked: "Bloqueado",
     modules: "Módulos",
-    addProduct: "Añadir Producto",
+    addProduct: "Añadir Produto",
     manageCatalog: "Gestionar Catálogo",
     selectPrice: "Seleccionar Precio Stripe"
   }

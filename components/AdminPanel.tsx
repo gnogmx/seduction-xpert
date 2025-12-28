@@ -1,19 +1,32 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Language } from '../types';
-import { TRANSLATIONS, EBOOKS, COURSES, STRIPE_LINKS } from '../constants';
-import { DataService } from '../services/supabase';
+import { TRANSLATIONS, EBOOKS, COURSES, STRIPE_LINKS, ADMIN_EMAILS } from '../constants';
+import { DataService, supabase } from '../services/supabase';
 
 const AdminPanel: React.FC<{language: Language}> = ({ language }) => {
   const t = TRANSLATIONS[language];
   const [activeTab, setActiveTab] = useState<'courses' | 'ebooks'>('courses');
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
 
   // Form states
   const [title, setTitle] = useState('');
   const [image, setImage] = useState('');
   const [stripeLink, setStripeLink] = useState(STRIPE_LINKS.PRODUCTS.PRICE_9_90);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.email && ADMIN_EMAILS.includes(session.user.email)) {
+        setIsAuthorized(true);
+      } else {
+        setIsAuthorized(false);
+      }
+    };
+    checkAuth();
+  }, []);
 
   const handleSave = async () => {
     if (!title || !image) return alert('Preencha os campos!');
@@ -37,8 +50,22 @@ const AdminPanel: React.FC<{language: Language}> = ({ language }) => {
     }
   };
 
+  if (isAuthorized === false) {
+    return (
+      <div className="h-full flex items-center justify-center p-10 text-center">
+        <div className="space-y-4">
+          <i className="fa-solid fa-shield-halved text-6xl text-red-500 opacity-20"></i>
+          <h2 className="text-2xl font-bold text-white">Acesso Restrito</h2>
+          <p className="text-zinc-500">Você não tem permissão para acessar esta área.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isAuthorized === null) return null;
+
   return (
-    <div className="p-8 space-y-8">
+    <div className="p-8 space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between border-b border-zinc-800 pb-6">
         <div>
             <h2 className="text-3xl font-bold text-white uppercase tracking-tighter">{t.admin}</h2>
@@ -138,7 +165,7 @@ const AdminPanel: React.FC<{language: Language}> = ({ language }) => {
                             </div>
                         </td>
                         <td className="px-6 py-4">
-                            <p className="font-bold text-white text-sm">{item.title[language]}</p>
+                            <p className="font-bold text-white text-sm">{item.title[language] || item.title}</p>
                             <p className="text-[10px] text-zinc-600 uppercase mt-1">UUID: {item.id}</p>
                         </td>
                         <td className="px-6 py-4">

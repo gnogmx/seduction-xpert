@@ -1,12 +1,24 @@
 
-import { GoogleGenAI, LiveServerMessage, Modality, Blob, GenerateContentParameters } from '@google/genai';
-import { SYSTEM_INSTRUCTION } from '../constants';
-import { Language } from '../types';
+import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
+import { SYSTEM_INSTRUCTION } from '../constants.ts';
+import { Language } from '../types.ts';
+
+// Acesso seguro ao process.env
+const getEnv = (key: string) => {
+  try {
+    return (typeof process !== 'undefined' && process.env) ? process.env[key] : '';
+  } catch (e) {
+    return '';
+  }
+};
 
 export class GeminiService {
-  private static ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  private static getAI() {
+    return new GoogleGenAI({ apiKey: getEnv('API_KEY') });
+  }
 
   static async generateMultimodalResponse(lang: Language, history: any[], text: string, imageBase64?: string) {
+    const ai = this.getAI();
     const parts: any[] = [{ text }];
     
     if (imageBase64) {
@@ -19,7 +31,7 @@ export class GeminiService {
       });
     }
 
-    const response = await this.ai.models.generateContent({
+    const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [
         ...history,
@@ -34,7 +46,8 @@ export class GeminiService {
   }
 
   static getChatSession(lang: Language) {
-    return this.ai.chats.create({
+    const ai = this.getAI();
+    return ai.chats.create({
       model: 'gemini-3-flash-preview',
       config: {
         systemInstruction: SYSTEM_INSTRUCTION(lang),
@@ -48,7 +61,8 @@ export class GeminiService {
     onError: (e: any) => void;
     onClose: () => void;
   }) {
-    const sessionPromise = this.ai.live.connect({
+    const ai = this.getAI();
+    const sessionPromise = ai.live.connect({
       model: 'gemini-2.5-flash-native-audio-preview-09-2025',
       callbacks: {
         onopen: callbacks.onOpen,
