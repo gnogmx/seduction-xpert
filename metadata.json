@@ -1,0 +1,12 @@
+{
+  "name": "Seduction Xpert",
+  "short_name": "SX Xpert",
+  "description": "An elite AI-powered social coach designed to help men build confidence, master the art of conversation, and create genuine connections.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#d4af37",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
