@@ -1,137 +1,108 @@
 // api/ai.ts
-// Vercel Serverless Function: POST /api/ai
-// Usa OpenAI Responses API (texto + opcional imagem base64)
+// Serverless Function (Vercel) - não importa arquivos do projeto (evita ERR_MODULE_NOT_FOUND)
 
-import { SYSTEM_INSTRUCTION } from '../constants';
-import type { Language } from '../types';
+const SYSTEM_INSTRUCTION = (lang: 'pt' | 'en' | 'es') => `
+Você é o "Seduction Xpert", um consultor de elite, carismático e sofisticado.
+Idioma atual: ${lang === 'pt' ? 'Português do Brasil' : lang === 'en' ? 'English' : 'Español'}.
+Responda SEMPRE no idioma: ${lang === 'pt' ? 'Português' : lang === 'en' ? 'English' : 'Español'}.
 
-type HistoryItem =
-  | { role: 'user' | 'assistant' | 'system'; content: string }
-  | any;
+Diretrizes:
+- Você é um mestre em psicologia social e carisma.
+- Ajude homens a superarem a timidez com dicas práticas de abordagem, conversa e linguagem corporal.
+- Responda de forma elegante, curta e direta.
+- Ao analisar fotos, foque em: ambiente, linguagem corporal sugerida e "abridores" de conversa adequados ao contexto.
+`;
 
-function toRole(r: any): 'user' | 'assistant' | 'system' {
-  if (r === 'assistant' || r === 'system' || r === 'user') return r;
-  return 'user';
-}
+function normalizeHistoryItem(item: any) {
+  // Aceita {role, content} OU {role, parts:[{text}]}
+  const roleRaw = item?.role;
+  const role =
+    roleRaw === 'assistant' || roleRaw === 'model'
+      ? 'assistant'
+      : roleRaw === 'system'
+      ? 'system'
+      : 'user';
 
-function safeText(x: any): string {
-  if (typeof x === 'string') return x;
-  if (x?.text && typeof x.text === 'string') return x.text;
-  if (x?.content && typeof x.content === 'string') return x.content;
-  return '';
+  if (typeof item?.content === 'string') {
+    return { role, content: item.content };
+  }
+
+  const parts = Array.isArray(item?.parts) ? item.parts : [];
+  const text = parts
+    .map((p: any) => (typeof p?.text === 'string' ? p.text : ''))
+    .filter(Boolean)
+    .join('\n');
+
+  return { role, content: text };
 }
 
 export default async function handler(req: any, res: any) {
   try {
-    // CORS básico
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-    if (req.method === 'OPTIONS') {
-      return res.status(200).end();
-    }
-
     if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method not allowed' });
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
     }
 
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    if (!OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'Missing OPENAI_API_KEY on server' });
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      res.status(500).json({ error: 'Missing OPENAI_API_KEY' });
+      return;
     }
 
-    const body = req.body || {};
-    const input = safeText(body.input);
-    const history: HistoryItem[] = Array.isArray(body.history) ? body.history : [];
-    const lang: Language = (body.lang || 'pt') as Language;
-    const imageBase64: string | undefined = typeof body.imageBase64 === 'string' ? body.imageBase64 : undefined;
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
-    if (!input) {
-      return res.status(400).json({ error: 'Missing input' });
-    }
+    const input: string = body?.input ?? '';
+    const history: any[] = Array.isArray(body?.history) ? body.history : [];
+    const lang: 'pt' | 'en' | 'es' = body?.lang === 'en' || body?.lang === 'es' ? body.lang : 'pt';
+    const imageBase64: string | undefined = body?.imageBase64;
 
-    // Monta mensagens no formato do Responses API
-    const messages: any[] = [];
+    const systemMsg = { role: 'system', content: SYSTEM_INSTRUCTION(lang) };
 
-    // system instruction
-    const sys = SYSTEM_INSTRUCTION(lang);
-    if (sys) {
-      messages.push({
-        role: 'system',
-        content: [{ type: 'input_text', text: sys }],
-      });
-    }
+    const mappedHistory = history
+      .map(normalizeHistoryItem)
+      .filter((m: any) => typeof m?.content === 'string' && m.content.trim().length > 0);
 
-    // history
-    for (const h of history) {
-      const role = toRole(h?.role);
-      const text = safeText(h?.content) || safeText(h);
-      if (!text) continue;
+    const userContent = imageBase64
+      ? [
+          { type: 'text', text: input },
+          { type: 'image_url', image_url: { url: imageBase64 } },
+        ]
+      : input;
 
-      messages.push({
-        role,
-        content: [{ type: 'input_text', text }],
-      });
-    }
+    const messages = [
+      systemMsg,
+      ...mappedHistory,
+      { role: 'user', content: userContent },
+    ];
 
-    // current user input (text + optional image)
-    const userContent: any[] = [{ type: 'input_text', text: input }];
+    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
-    if (imageBase64) {
-      const base64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-      // assumimos jpeg; se você mandar png também funciona se trocar o mime abaixo
-      userContent.push({
-        type: 'input_image',
-        image_url: `data:image/jpeg;base64,${base64}`,
-      });
-    }
-
-    messages.push({ role: 'user', content: userContent });
-
-    const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
-
-    const r = await fetch('https://api.openai.com/v1/responses', {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model,
-        input: messages,
+        messages,
+        temperature: 0.7,
       }),
     });
 
     const data = await r.json().catch(() => ({}));
 
     if (!r.ok) {
-      const msg =
-        data?.error?.message ||
-        data?.message ||
-        `OpenAI API error (${r.status})`;
-      return res.status(500).json({ error: msg, status: r.status });
+      res.status(r.status).json({
+        error: data?.error?.message || `OpenAI error (${r.status})`,
+        details: data,
+      });
+      return;
     }
 
-    // `output_text` costuma vir pronto; fallback pra varrer output
-    let text: string = data?.output_text || '';
-
-    if (!text && Array.isArray(data?.output)) {
-      // tenta achar texto no output
-      for (const item of data.output) {
-        const content = item?.content;
-        if (Array.isArray(content)) {
-          for (const c of content) {
-            if (typeof c?.text === 'string') {
-              text += c.text;
-            }
-          }
-        }
-      }
-    }
-
-    return res.status(200).json({ text: text || '', raw: data });
+    const text = data?.choices?.[0]?.message?.content ?? '';
+    res.status(200).json({ text });
   } catch (e: any) {
-    return res.status(500).json({ error: e?.message ? String(e.message) : 'Internal error' });
+    res.status(500).json({ error: e?.message ? String(e.message) : 'Internal error' });
   }
 }
