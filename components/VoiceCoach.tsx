@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { GeminiService, decodeAudioData, decode, createPcmBlob } from '../services/gemini';
+import { VoiceGeminiService } from '../services/voiceGemini';
+import { decodeAudioData, decode, createPcmBlob } from '../services/gemini';
 import { LiveServerMessage } from '@google/genai';
 import { AVATARS, TRANSLATIONS } from '../constants';
 import { Language } from '../types';
@@ -35,7 +36,7 @@ const VoiceCoach: React.FC<{language: Language}> = ({ language }) => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const sessionPromise = GeminiService.connectVoice(language, {
+      const sessionPromise = VoiceGeminiService.connectVoice(language, {
         onOpen: () => {
           setIsActive(true); setIsConnecting(false);
           const source = inputCtx.createMediaStreamSource(stream);
