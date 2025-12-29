@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -15,6 +14,12 @@ import { supabase } from './services/supabase';
 import { ViewMode, Language } from './types';
 import { ADMIN_EMAILS } from './constants';
 
+// ✅ Em Vite, o frontend só lê import.meta.env.VITE_*
+const ENV = (import.meta as any).env || {};
+const MISSING_ENV: string[] = [];
+if (!ENV.VITE_SUPABASE_URL) MISSING_ENV.push('VITE_SUPABASE_URL');
+if (!ENV.VITE_SUPABASE_ANON_KEY) MISSING_ENV.push('VITE_SUPABASE_ANON_KEY');
+
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewMode>(ViewMode.DASHBOARD);
   const [language, setLanguage] = useState<Language>('pt');
@@ -24,94 +29,87 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initSession = async () => {
-      const getSafeEnv = (key: string) => {
-        try { return (typeof process !== 'undefined' && process.env) ? process.env[key] : null; } 
-        catch { return null; }
-      };
-
-      const apiKey = getSafeEnv('API_KEY');
-      const supabaseKey = getSafeEnv('SUPABASE_ANON_KEY');
-
-      if (!apiKey || !supabaseKey) {
-        console.error("ERRO: Variáveis de ambiente ausentes!");
-        setErrorStatus(`Faltando: ${!apiKey ? '[API_KEY] ' : ''}${!supabaseKey ? '[SUPABASE_ANON_KEY]' : ''}`);
-      }
-
       try {
         const { data: { session: currentSession }, error } = await supabase.auth.getSession();
-        if (error) throw error;
+        if (error) console.error("Erro ao buscar sessão:", error.message);
         setSession(currentSession);
       } catch (err: any) {
-        console.error("Erro Supabase:", err);
-        setErrorStatus("Falha na conexão com Supabase. Verifique suas chaves.");
+        console.error("Falha crítica no Supabase:", err);
+        setErrorStatus("Falha na conexão com o Supabase. Verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no Vercel e faça Redeploy.");
       } finally {
-        setTimeout(() => setLoading(false), 1000);
+        setTimeout(() => setLoading(false), 800);
       }
     };
 
     initSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      setSession(currentSession);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const isAdmin = session?.user?.email && ADMIN_EMAILS.includes(session.user.email);
-
+  // Splash
   if (loading) {
     return (
-      <div className="h-screen bg-black flex flex-col items-center justify-center p-8 text-center">
-        <div className="relative mb-8">
-          <div className="w-24 h-24 border-2 border-gold/20 border-t-gold rounded-full animate-spin"></div>
-          <div className="absolute inset-0 flex items-center justify-center">
-             <div className="w-12 h-12 bg-gold/10 rounded-full animate-pulse"></div>
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center text-center p-8">
+        <div className="w-24 h-24 rounded-full border-2 border-zinc-700 animate-pulse mb-6" />
+        <h1 className="text-4xl font-serif italic text-zinc-300 mb-2">Seduction Xpert</h1>
+        <p className="text-zinc-500 tracking-widest text-xs mb-8">ELITE SOCIAL CONSULTING</p>
+
+        {MISSING_ENV.length > 0 ? (
+          <div className="bg-red-950/30 border border-red-800 text-red-200 px-6 py-4 rounded-xl max-w-md">
+            <div className="font-bold mb-1">ERRO DE CONFIGURAÇÃO</div>
+            <div className="text-sm">Faltando: [{MISSING_ENV.join(' ')}]</div>
+            <div className="text-xs text-red-200/70 mt-2">
+              No Vercel: Settings → Environment Variables → (All Environments) → Redeploy.
+            </div>
           </div>
-        </div>
-        <h1 className="text-gold text-4xl font-serif italic tracking-widest animate-pulse mb-2">Seduction Xpert</h1>
-        <p className="text-zinc-600 text-[10px] uppercase tracking-[0.4em] font-bold">Elite Social Consulting</p>
-        
-        {errorStatus && (
-          <div className="mt-12 p-4 bg-red-950/20 border border-red-500/30 rounded-xl max-w-xs">
-            <p className="text-red-500 text-[10px] font-bold uppercase mb-1">Erro de Configuração</p>
-            <p className="text-zinc-400 text-xs leading-tight">{errorStatus}</p>
-            <p className="text-zinc-500 text-[9px] mt-3 italic">Configure as Environment Variables no Vercel.</p>
+        ) : errorStatus ? (
+          <div className="bg-red-950/30 border border-red-800 text-red-200 px-6 py-4 rounded-xl max-w-md">
+            <div className="font-bold mb-1">ERRO</div>
+            <div className="text-sm">{errorStatus}</div>
           </div>
-        )}
+        ) : null}
       </div>
     );
   }
 
+  // Auth gate
   if (!session) {
-    return <Auth />;
+    return <Auth language={language} onLanguageChange={setLanguage} />;
   }
 
+  const userEmail = session?.user?.email || '';
+  const isAdmin = ADMIN_EMAILS.includes(userEmail);
+
+  // Route guard do Admin
+  const safeActiveView =
+    activeView === ViewMode.ADMIN && !isAdmin ? ViewMode.DASHBOARD : activeView;
+
   return (
-    <Layout 
-      activeView={activeView} 
-      onViewChange={setActiveView} 
-      language={language} 
-      onLanguageChange={setLanguage}
-      userEmail={session.user.email}
+    <Layout
+      activeView={safeActiveView}
+      setActiveView={setActiveView}
+      language={language}
+      setLanguage={setLanguage}
+      userEmail={userEmail}
+      isAdmin={isAdmin}
+      onLogout={async () => {
+        await supabase.auth.signOut();
+        setSession(null);
+      }}
     >
-      {isAdmin && activeView === ViewMode.DASHBOARD && (
-        <div className="fixed top-6 right-6 z-[100] animate-bounce">
-          <div className="bg-gold text-black text-[10px] font-black px-4 py-2 rounded-full shadow-2xl flex items-center gap-2">
-            <i className="fa-solid fa-crown"></i> ADMIN LOGADO
-          </div>
-        </div>
-      )}
-      
-      {activeView === ViewMode.DASHBOARD && <Dashboard language={language} />}
-      {activeView === ViewMode.CHAT && <ChatRoom language={language} />}
-      {activeView === ViewMode.VOICE && <VoiceCoach language={language} />}
-      {activeView === ViewMode.SCENARIOS && <Scenarios onStartChat={() => setActiveView(ViewMode.CHAT)} language={language} />}
-      {activeView === ViewMode.PRICING && <Pricing language={language} />}
-      {activeView === ViewMode.EBOOKS && <EBooks language={language} />}
-      {activeView === ViewMode.COURSES && <Courses language={language} />}
-      {activeView === ViewMode.YOUTUBE && <YouTubeFeed language={language} />}
-      {activeView === ViewMode.ADMIN && <AdminPanel language={language} />}
+      {safeActiveView === ViewMode.DASHBOARD && <Dashboard language={language} />}
+      {safeActiveView === ViewMode.CHAT && <ChatRoom language={language} session={session} />}
+      {safeActiveView === ViewMode.VOICE && <VoiceCoach language={language} />}
+      {safeActiveView === ViewMode.SCENARIOS && <Scenarios language={language} session={session} />}
+      {safeActiveView === ViewMode.COURSES && <Courses language={language} />}
+      {safeActiveView === ViewMode.EBOOKS && <EBooks language={language} />}
+      {safeActiveView === ViewMode.YOUTUBE && <YouTubeFeed language={language} />}
+      {safeActiveView === ViewMode.PRICING && <Pricing language={language} />}
+      {safeActiveView === ViewMode.ADMIN && isAdmin && <AdminPanel language={language} />}
     </Layout>
   );
 };
