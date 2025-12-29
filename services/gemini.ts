@@ -1,20 +1,11 @@
 import { Language } from '../types';
 
-type HistoryItem =
-  | { role: 'user' | 'assistant' | 'system'; content: string }
-  | any;
-
-export type PcmBlob = {
-  data: string;      // base64
-  mimeType: string;  // ex: 'audio/pcm;rate=16000'
-};
+type ApiHistoryItem = { role: 'user' | 'assistant' | 'system'; content: string } | any;
 
 export class GeminiService {
-  // Mantém o mesmo nome/classe pra não quebrar imports do app
-
   static async generateMultimodalResponse(
     lang: Language,
-    history: HistoryItem[],
+    history: ApiHistoryItem[],
     text: string,
     imageBase64?: string
   ) {
@@ -37,24 +28,22 @@ export class GeminiService {
     return r.json();
   }
 
-  static getChatSession(lang: Language) {
+  static getChatSession(_lang: Language) {
     return {
-      send: async (text: string, history: HistoryItem[] = []) =>
-        GeminiService.generateMultimodalResponse(lang, history, text),
+      send: async (text: string, history: ApiHistoryItem[] = []) =>
+        GeminiService.generateMultimodalResponse(_lang, history, text),
     };
   }
 
-  // NÃO usado (voz agora está em VoiceGeminiService)
+  // chat-only; voz fica no VoiceGeminiService
   static async connectVoice(_lang: Language, callbacks: any) {
-    callbacks?.onError?.(new Error('Voice is not handled by GeminiService'));
+    callbacks?.onError?.(new Error('Voice is handled by VoiceGeminiService'));
     callbacks?.onClose?.();
-    throw new Error('Voice is not handled by GeminiService');
+    throw new Error('Voice is handled by VoiceGeminiService');
   }
 }
 
-// --------------------
-// Audio utils (PCM16 <-> base64)
-// --------------------
+// ===== Audio Utils (usado pelo VoiceCoach) =====
 
 export function decode(base64: string) {
   const binaryString = atob(base64);
@@ -71,7 +60,6 @@ export function encode(bytes: Uint8Array) {
   return btoa(binary);
 }
 
-// Converte PCM16 (little-endian) para AudioBuffer
 export async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
@@ -79,7 +67,7 @@ export async function decodeAudioData(
   numChannels: number
 ): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = Math.floor(dataInt16.length / numChannels);
+  const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
 
   for (let channel = 0; channel < numChannels; channel++) {
@@ -88,17 +76,18 @@ export async function decodeAudioData(
       channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
     }
   }
+
   return buffer;
 }
 
-// Converte Float32 PCM do microfone para PCM16 base64 no formato esperado pelo Gemini Live
-export function createPcmBlob(data: Float32Array): PcmBlob {
+export function createPcmBlob(data: Float32Array) {
   const l = data.length;
   const int16 = new Int16Array(l);
-
   for (let i = 0; i < l; i++) {
-    const s = Math.max(-1, Math.min(1, data[i]));
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    let s = data[i];
+    if (s > 1) s = 1;
+    if (s < -1) s = -1;
+    int16[i] = s * 32767;
   }
 
   return {
