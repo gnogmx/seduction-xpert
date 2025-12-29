@@ -90,27 +90,22 @@ const App: React.FC = () => {
 
   return (
     <Layout
-      activeView={safeActiveView}
-      setActiveView={setActiveView}
-      language={language}
-      setLanguage={setLanguage}
-      userEmail={userEmail}
-      isAdmin={isAdmin}
-      onLogout={async () => {
-        await supabase.auth.signOut();
-        setSession(null);
-      }}
-    >
-      {safeActiveView === ViewMode.DASHBOARD && <Dashboard language={language} />}
-      {safeActiveView === ViewMode.CHAT && <ChatRoom language={language} session={session} />}
-      {safeActiveView === ViewMode.VOICE && <VoiceCoach language={language} />}
-      {safeActiveView === ViewMode.SCENARIOS && <Scenarios language={language} session={session} />}
-      {safeActiveView === ViewMode.COURSES && <Courses language={language} />}
-      {safeActiveView === ViewMode.EBOOKS && <EBooks language={language} />}
-      {safeActiveView === ViewMode.YOUTUBE && <YouTubeFeed language={language} />}
-      {safeActiveView === ViewMode.PRICING && <Pricing language={language} />}
-      {safeActiveView === ViewMode.ADMIN && isAdmin && <AdminPanel language={language} />}
-    </Layout>
+  activeView={safeActiveView}
+  onViewChange={setActiveView}
+  language={language}
+  onLanguageChange={setLanguage}
+  userEmail={userEmail}
+>
+  {safeActiveView === ViewMode.DASHBOARD && <Dashboard language={language} />}
+  {safeActiveView === ViewMode.CHAT && <ChatRoom language={language} session={session} />}
+  {safeActiveView === ViewMode.VOICE && <VoiceCoach language={language} />}
+  {safeActiveView === ViewMode.SCENARIOS && <Scenarios language={language} session={session} />}
+  {safeActiveView === ViewMode.COURSES && <Courses language={language} />}
+  {safeActiveView === ViewMode.EBOOKS && <EBooks language={language} />}
+  {safeActiveView === ViewMode.YOUTUBE && <YouTubeFeed language={language} />}
+  {safeActiveView === ViewMode.PRICING && <Pricing language={language} />}
+  {safeActiveView === ViewMode.ADMIN && isAdmin && <AdminPanel language={language} />}
+</Layout>
   );
 };
 
