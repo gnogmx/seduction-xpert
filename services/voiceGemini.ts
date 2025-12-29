@@ -41,7 +41,7 @@ export class VoiceGeminiService {
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Orus' } },
         },
         systemInstruction: SYSTEM_INSTRUCTION(lang) + '\nVoice call mode enabled.',
         inputAudioTranscription: {},
