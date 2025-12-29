@@ -1,143 +1,137 @@
+// api/ai.ts
+// Vercel Serverless Function: POST /api/ai
+// Usa OpenAI Responses API (texto + opcional imagem base64)
+
 import { SYSTEM_INSTRUCTION } from '../constants';
+import type { Language } from '../types';
 
 type HistoryItem =
-  | { role?: string; content?: string }
-  | { role?: string; parts?: any[] }
+  | { role: 'user' | 'assistant' | 'system'; content: string }
   | any;
 
-function pickEnv(key: string) {
-  // Node runtime (Vercel Function)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const v = (process as any)?.env?.[key];
-  return typeof v === 'string' ? v : '';
-}
-
-function normalizeTextFromParts(parts: any[]): string {
-  if (!Array.isArray(parts)) return '';
-  let out = '';
-  for (const p of parts) {
-    if (!p) continue;
-    if (typeof p.text === 'string') out += p.text;
-    // ignora inlineData aqui (imagem) — imagem vai no message atual
-  }
-  return out.trim();
-}
-
-function toOpenAIRole(role: any): 'user' | 'assistant' | 'system' {
-  const r = String(role || '').toLowerCase();
-  if (r === 'assistant') return 'assistant';
-  if (r === 'system') return 'system';
-  if (r === 'model') return 'assistant';
+function toRole(r: any): 'user' | 'assistant' | 'system' {
+  if (r === 'assistant' || r === 'system' || r === 'user') return r;
   return 'user';
 }
 
-function normalizeHistory(history: HistoryItem[]) {
-  if (!Array.isArray(history)) return [];
-
-  const msgs: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [];
-  for (const h of history) {
-    if (!h) continue;
-
-    const role = toOpenAIRole(h.role);
-
-    // formato { role, content }
-    if (typeof h.content === 'string' && h.content.trim()) {
-      msgs.push({ role, content: h.content.trim() });
-      continue;
-    }
-
-    // formato Gemini { role, parts:[{text:...}, ...] }
-    if (Array.isArray(h.parts)) {
-      const text = normalizeTextFromParts(h.parts);
-      if (text) msgs.push({ role, content: text });
-      continue;
-    }
-  }
-  return msgs;
+function safeText(x: any): string {
+  if (typeof x === 'string') return x;
+  if (x?.text && typeof x.text === 'string') return x.text;
+  if (x?.content && typeof x.content === 'string') return x.content;
+  return '';
 }
 
-function ensureDataUrl(imageBase64?: string) {
-  if (!imageBase64) return undefined;
-  const s = String(imageBase64).trim();
-  if (!s) return undefined;
-  if (s.startsWith('data:image/')) return s;
-  // se vier só base64 puro
-  return `data:image/jpeg;base64,${s}`;
-}
-
-// Vercel Function (Node)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default async function handler(req: any, res: any) {
   try {
+    // CORS básico
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
     if (req.method !== 'POST') {
-      res.status(405).json({ error: 'Method not allowed' });
-      return;
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    if (!OPENAI_API_KEY) {
+      return res.status(500).json({ error: 'Missing OPENAI_API_KEY on server' });
     }
 
     const body = req.body || {};
-    const input = String(body.input || '').trim();
-    const lang = (body.lang || 'pt') as 'pt' | 'en' | 'es';
-    const history = normalizeHistory(body.history || []);
-    const imageBase64 = ensureDataUrl(body.imageBase64);
+    const input = safeText(body.input);
+    const history: HistoryItem[] = Array.isArray(body.history) ? body.history : [];
+    const lang: Language = (body.lang || 'pt') as Language;
+    const imageBase64: string | undefined = typeof body.imageBase64 === 'string' ? body.imageBase64 : undefined;
 
-    if (!input && !imageBase64) {
-      res.status(400).json({ error: 'Missing input' });
-      return;
+    if (!input) {
+      return res.status(400).json({ error: 'Missing input' });
     }
 
-    // aceita os 2 nomes pra não quebrar teu setup atual
-    const apiKey = pickEnv('OPENAI_API_KEY') || pickEnv('VITE_OPENAI_API_KEY');
-    if (!apiKey) {
-      res.status(500).json({
-        error: 'Missing OpenAI API key (set OPENAI_API_KEY or VITE_OPENAI_API_KEY in Vercel env)',
+    // Monta mensagens no formato do Responses API
+    const messages: any[] = [];
+
+    // system instruction
+    const sys = SYSTEM_INSTRUCTION(lang);
+    if (sys) {
+      messages.push({
+        role: 'system',
+        content: [{ type: 'input_text', text: sys }],
       });
-      return;
     }
 
-    const model = pickEnv('OPENAI_MODEL') || 'gpt-4o-mini';
+    // history
+    for (const h of history) {
+      const role = toRole(h?.role);
+      const text = safeText(h?.content) || safeText(h);
+      if (!text) continue;
 
-    const system = SYSTEM_INSTRUCTION ? SYSTEM_INSTRUCTION(lang) : 'You are Seduction Xpert.';
+      messages.push({
+        role,
+        content: [{ type: 'input_text', text }],
+      });
+    }
 
-    // monta o message final (texto + imagem opcional)
-    const userContent = imageBase64
-      ? [
-          { type: 'text', text: input || (lang === 'pt' ? 'Analise esta imagem.' : 'Analyze this image.') },
-          { type: 'image_url', image_url: { url: imageBase64 } },
-        ]
-      : input;
+    // current user input (text + optional image)
+    const userContent: any[] = [{ type: 'input_text', text: input }];
 
-    const messages: any[] = [{ role: 'system', content: system }, ...history, { role: 'user', content: userContent }];
+    if (imageBase64) {
+      const base64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+      // assumimos jpeg; se você mandar png também funciona se trocar o mime abaixo
+      userContent.push({
+        type: 'input_image',
+        image_url: `data:image/jpeg;base64,${base64}`,
+      });
+    }
 
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    messages.push({ role: 'user', content: userContent });
+
+    const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+
+    const r = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model,
-        messages,
-        temperature: 0.7,
+        input: messages,
       }),
     });
 
     const data = await r.json().catch(() => ({}));
 
     if (!r.ok) {
-      res.status(r.status).json({
-        error: data?.error?.message || `OpenAI error (${r.status})`,
-        detail: data?.error || data,
-      });
-      return;
+      const msg =
+        data?.error?.message ||
+        data?.message ||
+        `OpenAI API error (${r.status})`;
+      return res.status(500).json({ error: msg, status: r.status });
     }
 
-    const text =
-      data?.choices?.[0]?.message?.content ??
-      data?.choices?.[0]?.message?.content?.[0]?.text ??
-      '';
+    // `output_text` costuma vir pronto; fallback pra varrer output
+    let text: string = data?.output_text || '';
 
-    res.status(200).json({ text: String(text || '').trim() });
+    if (!text && Array.isArray(data?.output)) {
+      // tenta achar texto no output
+      for (const item of data.output) {
+        const content = item?.content;
+        if (Array.isArray(content)) {
+          for (const c of content) {
+            if (typeof c?.text === 'string') {
+              text += c.text;
+            }
+          }
+        }
+      }
+    }
+
+    return res.status(200).json({ text: text || '', raw: data });
   } catch (e: any) {
-    res.status(500).json({ error: e?.message ? String(e.message) : 'Server error' });
+    return res.status(500).json({ error: e?.message ? String(e.message) : 'Internal error' });
   }
 }
