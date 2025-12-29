@@ -16,7 +16,7 @@ export class VoiceGeminiService {
   private static getAI() {
     // IMPORTANTE: você precisa ter VITE_GEMINI_API_KEY no Vercel
     const apiKey = getEnv('VITE_GEMINI_API_KEY');
-    return new GoogleGenAI({ apiKey });
+    return new GoogleGenAI({ apiKey, apiVersion: 'v1alpha' });
   }
 
   static async connectVoice(
@@ -31,7 +31,7 @@ export class VoiceGeminiService {
     const ai = this.getAI();
 
     const sessionPromise = ai.live.connect({
-      model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+      model: 'gemini-2.5-flash-native-audio-preview-12-2025',
       callbacks: {
         onopen: callbacks.onOpen,
         onmessage: callbacks.onMessage,
