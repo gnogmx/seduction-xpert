@@ -11,6 +11,7 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
   const [isActive, setIsActive] = useState(false);
   const [transcription, setTranscription] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [errMsg, setErrMsg] = useState<string>('');
 
   const outputCtxRef = useRef<AudioContext | null>(null);
   const inputCtxRef = useRef<AudioContext | null>(null);
@@ -23,12 +24,13 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
-  const sessionRef = useRef<any>(null); // sessão Gemini Live (evita promise.then em loop)
+  const sessionRef = useRef<any>(null);
 
   const cleanup = useCallback(() => {
     setIsActive(false);
     setIsConnecting(false);
     setTranscription('');
+    setErrMsg('');
 
     try {
       if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
@@ -63,16 +65,15 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
     if (isActive || isConnecting) return;
     setIsConnecting(true);
     setTranscription('');
+    setErrMsg('');
 
     try {
-      // Input 16k (mic), Output 24k (model)
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
 
       inputCtxRef.current = inputCtx;
       outputCtxRef.current = outputCtx;
 
-      // IMPORTANT: Chrome frequentemente inicia AudioContext como "suspended"
       await inputCtx.resume();
       await outputCtx.resume();
 
@@ -85,7 +86,6 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
           setIsConnecting(false);
           setTranscription('Listening...');
 
-          // Cria pipeline mic -> PCM -> sendRealtimeInput
           const source = inputCtx.createMediaStreamSource(stream);
           const processor = inputCtx.createScriptProcessor(4096, 1, 1);
 
@@ -97,13 +97,12 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
               if (!sessionRef.current) return;
               const pcmBlob = createPcmBlob(e.inputBuffer.getChannelData(0));
               sessionRef.current.sendRealtimeInput({ media: pcmBlob });
-            } catch (err) {
-              // silencia para não quebrar loop
-            }
+            } catch (err) {}
           };
 
           source.connect(processor);
-          // mantém processor “vivo” sem eco audível (ganho 0)
+
+          // keep processor alive without audible echo
           const gain = inputCtx.createGain();
           gain.gain.value = 0;
           processor.connect(gain);
@@ -111,7 +110,6 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
         },
 
         onMessage: async (m: LiveServerMessage) => {
-          // Transcrições (varia por payload)
           const inTx =
             (m as any)?.serverContent?.inputTranscription?.text ||
             (m as any)?.serverContent?.inputTranscription;
@@ -123,7 +121,6 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
           if (outTx) setTranscription(String(outTx));
           else if (inTx) setTranscription(String(inTx));
 
-          // Áudio: varre parts e toca qualquer inlineData com data base64
           const parts = (m as any)?.serverContent?.modelTurn?.parts || [];
           for (const p of parts) {
             const base64 = p?.inlineData?.data;
@@ -145,13 +142,13 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
 
               sourcesRef.current.add(src);
               src.onended = () => sourcesRef.current.delete(src);
-            } catch (err) {
-              // se vier outro formato, não derruba a sessão
-            }
+            } catch (err) {}
           }
         },
 
         onError: (e) => {
+          console.error('Voice error', e);
+          setErrMsg(e?.message ? String(e.message) : 'Erro na sessão de voz');
           cleanup();
         },
 
@@ -160,9 +157,10 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
         },
       });
 
-      // guarda sessão real quando resolver
       sessionRef.current = await sessionPromise;
-    } catch (e) {
+    } catch (e: any) {
+      console.error(e);
+      setErrMsg(e?.message ? String(e.message) : 'Erro ao iniciar voz');
       cleanup();
     }
   };
@@ -182,6 +180,8 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
       <p className="max-w-md text-zinc-400">
         {isActive ? transcription || '...' : 'Treine sua voz e abordagem em tempo real.'}
       </p>
+
+      {errMsg ? <p className="text-red-400 text-sm max-w-md">{errMsg}</p> : null}
 
       <button
         onClick={isActive ? cleanup : startSession}
