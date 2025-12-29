@@ -24,14 +24,15 @@ const Dashboard: React.FC<{language: Language}> = ({ language }) => {
       <section className="space-y-6">
         <h3 className="text-2xl font-serif font-bold accent-gold">{t.dailyTips}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <TipCard 
-            title={language === 'pt' ? "Contato Visual" : language === 'en' ? "Eye Contact" : "Contacto Visual"} 
-            content={language === 'pt' ? "Mantenha o contato por 3 segundos." : "Hold eye contact for 3 seconds." : "Mantén contacto visual por 3 segundos."}
-          />
-          <TipCard 
-            title={language === 'pt' ? "Tom de Voz" : "Voice Tone" : "Tono de Voz"} 
-            content={language === 'pt' ? "Fale pausadamente e com calma." : "Speak slowly and calmly." : "Habla despacio y con calma."}
-          />
+         <TipCard
+       title={language === 'pt' ? "Contato Visual" : language === 'en' ? "Eye Contact" : "Contacto Visual"}
+       content={language === 'pt' ? "Mantenha o contato por 3 segundos." : language === 'en' ? "Hold eye contact for 3 seconds." : "Mantén contacto visual por 3 segundos."}
+/>
+
+<TipCard
+  title={language === 'pt' ? "Tom de Voz" : language === 'en' ? "Voice Tone" : "Tono de Voz"}
+  content={language === 'pt' ? "Fale pausadamente e com calma." : language === 'en' ? "Speak slowly and calmly." : "Habla despacio y con calma."}
+/>
         </div>
       </section>
     </div>
