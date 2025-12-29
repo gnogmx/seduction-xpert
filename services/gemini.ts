@@ -1,137 +1,63 @@
+import { Language } from '../types';
 
-import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
-import { SYSTEM_INSTRUCTION } from '../constants.ts';
-import { Language } from '../types.ts';
-
-// Acesso seguro ao process.env
-const getEnv = (key: string) => {
-  try {
-    return (typeof process !== 'undefined' && process.env) ? process.env[key] : '';
-  } catch (e) {
-    return '';
-  }
-};
+type HistoryItem =
+  | { role: 'user' | 'assistant' | 'system'; content: string }
+  | any;
 
 export class GeminiService {
-  private static getAI() {
-    return new GoogleGenAI({ apiKey: getEnv('API_KEY') });
-  }
+  // mantém o mesmo nome/classe pra não quebrar imports do app
 
-  static async generateMultimodalResponse(lang: Language, history: any[], text: string, imageBase64?: string) {
-    const ai = this.getAI();
-    const parts: any[] = [{ text }];
-    
-    if (imageBase64) {
-      const base64Data = imageBase64.split(',')[1] || imageBase64;
-      parts.push({
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: base64Data,
-        },
-      });
+  static async generateMultimodalResponse(
+    lang: Language,
+    history: HistoryItem[],
+    text: string,
+    imageBase64?: string
+  ) {
+    const r = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: text,
+        history,
+        lang,
+        imageBase64,
+      }),
+    });
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.error || `API error (${r.status})`);
     }
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: [
-        ...history,
-        { role: 'user', parts }
-      ],
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION(lang),
-      }
-    });
-
-    return response;
+    return r.json();
   }
 
-  static getChatSession(lang: Language) {
-    const ai = this.getAI();
-    return ai.chats.create({
-      model: 'gemini-3-flash-preview',
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION(lang),
-      },
-    });
+  static getChatSession(_lang: Language) {
+    // seu app pode estar usando isso; devolvemos um objeto com send()
+    return {
+      send: async (text: string, history: HistoryItem[] = []) =>
+        GeminiService.generateMultimodalResponse(_lang, history, text),
+    };
   }
 
-  static async connectVoice(lang: Language, callbacks: {
-    onOpen: () => void;
-    onMessage: (message: LiveServerMessage) => void;
-    onError: (e: any) => void;
-    onClose: () => void;
-  }) {
-    const ai = this.getAI();
-    const sessionPromise = ai.live.connect({
-      model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-      callbacks: {
-        onopen: callbacks.onOpen,
-        onmessage: callbacks.onMessage,
-        onerror: (e) => callbacks.onError(e),
-        onclose: callbacks.onClose,
-      },
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
-        },
-        systemInstruction: SYSTEM_INSTRUCTION(lang) + "\nVoice call mode enabled.",
-        inputAudioTranscription: {},
-        outputAudioTranscription: {},
-      },
-    });
-
-    return sessionPromise;
+  static async connectVoice(_lang: Language, callbacks: any) {
+    // voz Gemini não existe mais aqui. Evita quebrar a UI.
+    callbacks?.onError?.(new Error('Voice is disabled in this build'));
+    callbacks?.onClose?.();
+    throw new Error('Voice is disabled in this build');
   }
 }
 
-// Audio Utils
-export function decode(base64: string) {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
+// Mantém exports usados no app (stubs)
+export function decode(_base64: string) {
+  throw new Error('Not used');
 }
-
-export function encode(bytes: Uint8Array) {
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
+export function encode(_bytes: Uint8Array) {
+  throw new Error('Not used');
 }
-
-export async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
+export async function decodeAudioData() {
+  throw new Error('Not used');
 }
-
-export function createPcmBlob(data: Float32Array): Blob {
-  const l = data.length;
-  const int16 = new Int16Array(l);
-  for (let i = 0; i < l; i++) {
-    int16[i] = data[i] * 32768;
-  }
-  return {
-    data: encode(new Uint8Array(int16.buffer)),
-    mimeType: 'audio/pcm;rate=16000',
-  };
+export function createPcmBlob() {
+  throw new Error('Not used');
 }
