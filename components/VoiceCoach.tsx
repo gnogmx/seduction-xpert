@@ -96,7 +96,7 @@ const VoiceCoach: React.FC<{ language: Language }> = ({ language }) => {
             try {
               if (!sessionRef.current) return;
               const pcmBlob = createPcmBlob(e.inputBuffer.getChannelData(0));
-              sessionRef.current.sendRealtimeInput({ media: pcmBlob });
+              sessionRef.current.sendRealtimeInput({ audio: pcmBlob });
             } catch (err) {}
           };
 
